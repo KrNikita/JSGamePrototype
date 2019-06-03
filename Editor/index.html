@@ -1,0 +1,280 @@
+<html>
+    <head>
+        <title>Shooter</title>
+        <!--Import Google Icon Font-->
+        <link href="http://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+        <script type="text/javascript" src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/0.97.8/css/materialize.min.css">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/0.97.8/js/materialize.min.js"></script>
+          
+        <script src="https://cdn.socket.io/socket.io-1.4.5.js"></script>
+        
+        <script type="text/javascript" src="Client/engine/request.js"></script>
+        <script type="text/javascript" src="Client/engine/base64.js"></script>
+        <script type="text/javascript" src="Client/engine/mouse.js"></script>
+        <script type="text/javascript" src="Client/engine/touch.js"></script>
+        <script type="text/javascript" src="Client/engine/render.js"></script>
+        <script type="text/javascript" src="Client/engine/map.js"></script>
+        <script type="text/javascript" src="Client/engine/core.js"></script>
+        <script type="text/javascript" src="Client/engine/sprite_manager.js"></script>
+        <script type="text/javascript" src="Client/engine/path_finding.js"></script>
+        
+        <script type="text/javascript" src="Client/engine/common/CGameLevel.js"></script>
+        
+        <script type="text/javascript" src="Editor/editor.js"></script>
+        <script type="text/javascript" src="Editor/side_panels.js"></script>
+        <script type="text/javascript" src="Editor/parameters_panels.js"></script>
+    </head>
+    <body>
+        <label id='fps' style='color:#fff;position:absolute;top:100px;left:50px;z-index: 1000;'>fps</label>
+        <label id='debug' style='color:#fff;position:absolute;top:200px;left:50px;z-index: 1000;'>debug</label>
+        <canvas id='canvas'  style='background-color:#000;margin:0px;position:absolute;top:0px;left:0px;' oncontextmenu="return false;"> </canvas>
+        <div style="position:absolute;top:0px;left:0px;width:100%;height:50px;border:1px solid #000;">
+            
+                <form class="form-inline">
+                <button onclick="create_map();return false;"><i class="material-icons">add</i></button>
+                <button onclick="open_map();return false;"><i class="material-icons">folder_open</i></button>
+                <button onclick="editor_save(); return false;"><i class="material-icons">save</i></button>
+                <button onclick="hideBrushes();return false;"><i class="material-icons">brush</i></button>
+                <select id='layers_select_id' style="width:150px;position:relative;left:0px;opacity: 1;display:inline;" onchange="change_level();">
+                </select>
+                <button onclick="add_layer('');return false;"><i class="material-icons">add</i></button>
+                <button onclick="rename_layer();return false;"><i class="material-icons">edit</i></button>
+                <button onclick="hide_show_layer();return false;"><i class="material-icons">remove_red_eye</i></button>
+                SnapGrid:<div class="switch" style="position:relative;left:0px;opacity: 1;display:inline;">
+                    <label>
+                      Off
+                      <input type="checkbox" onclick="snap_grid_check = this.checked?true:false; snap_tile_check = this.checked?false:true;"/>
+                      <span class="lever"></span>
+                      On
+                    </label>
+                </div>
+
+                SnapTile:<div class="switch" style="position:relative;left:0px;opacity: 1;display:inline;">
+                    <label>
+                      Off
+                      <input type="checkbox" onclick="snap_tile_check = this.checked?true:false; snap_grid_check = this.checked?false:true;"/>
+                      <span class="lever"></span>
+                      On
+                    </label>
+                </div>
+                
+                <select style="width:100px;position:relative;left:0px;opacity: 1;display:inline;">
+                    <option>Scale_2x</option>
+                </select>
+            </form>
+        </div>
+        
+        <script>
+            
+            
+            function create_map(){
+                var val = prompt("Enter map name", "MapName");
+                if (val != null) {
+                    var map_size_w_val = prompt("Enter map width in cells", "100");
+                    if (map_size_w_val != null) {
+                        var map_size_h_val = prompt("Enter map height in cells", "100");
+                        if (map_size_h_val != null) {
+                            game_level.createMap(val,map_size_w_val,map_size_h_val,DEFAULT_CELL_WIDTH,DEFAULT_CELL_HEIGHT);
+                            layers_num = 0;
+                            layers_names = {};
+                            layers_visibility = {};
+                            
+                            clear_layers();
+
+                            add_layer('');
+                        }
+                    }
+                    
+                }
+            }
+            
+            function open_map(name,callback){                
+                socket.emit("get_levels_list",{});
+            }
+            
+            function clear_layers(){
+                $("#layers_select_id").empty();
+            }
+            
+            window.addEventListener("load",function(){
+                add_layer('');
+                
+                
+            });
+            function rename_layer(){
+                var val = prompt("Enter layer name", "Layer Name");
+                if (val != null) {
+                    var sel = document.getElementById('layers_select_id').options[document.getElementById('layers_select_id').selectedIndex].value;
+                    document.getElementById('layers_select_id').options[document.getElementById('layers_select_id').selectedIndex].innerHTML = val;
+                    layers_names[sel] = val;
+                }
+            }
+            function hide_show_layer(){
+                var sel = document.getElementById('layers_select_id').options[document.getElementById('layers_select_id').selectedIndex].value;
+                if(layers_visibility[sel]){
+                    map.setSelectedLevelVisibility(false);
+                    layers_visibility[sel] = false;
+                }else{
+                    map.setSelectedLevelVisibility(true);
+                    layers_visibility[sel] = true;
+                }
+            };
+            function change_level(){
+                var sel = document.getElementById('layers_select_id').options[document.getElementById('layers_select_id').selectedIndex].value;
+                game_level.SetCurrentLayer(sel);
+            };
+            
+        </script>
+        
+        <div id="side_panel_id" style="position:absolute;width:300px;border:1px solid #000;">
+        <ul class="collapsible" data-collapsible="accordion">
+            <li>
+              <div class="collapsible-header light-green">Parameters</div>
+              <div class="collapsible-body" id="parameters_panel_id">
+                  <div id="blocks_parameters_id" style="padding: 10px;">
+                    Cover Height:
+                    <select id="select_cover_height_id" style="width:100px;position:relative;left:0px;opacity: 1;display:inline;">
+                        <option value="0">No Cover</option>
+                        <option value="1">Low Cover</option>
+                        <option value="2">Medium Cover</option>
+                        <option value="3">High Cover</option>
+                    </select>
+                    <button onclick="remove_selected();return false;">Remove</button>
+                    <button onclick="set_block_parameters(document.getElementById('select_cover_height_id').options[document.getElementById('select_cover_height_id').selectedIndex].value);return false;">Apply</button>
+                    </div>
+                  
+                  <div id="static_sprites_parameters_id" style="padding: 10px;">
+                    Visibility:
+                    <div class="switch">
+                      <label>
+                        Hidden
+                        <input id="static_sprite_parameter_visibility_id" type="checkbox"/>
+                        <span class="lever"></span>
+                        Visible
+                      </label>
+                    </div>
+                    <button onclick="remove_selected();return false;">Remove</button>
+                    <button onclick="set_static_sprites_parameters((document.getElementById('static_sprite_parameter_visibility_id').checked)?true:false);return false;">Apply</button>
+                    </div>
+
+                    <div id="animation_sprites_parameters_id" style="padding: 10px;">
+                    Visibility:
+                    <div class="switch">
+                      <label>
+                        Hidden
+                        <input id="animation_sprite_parameter_visibility_id" type="checkbox"/>
+                        <span class="lever"></span>
+                        Visible
+                      </label>
+                    </div>
+
+                    Loop:
+                    <div class="switch">
+                      <label>
+                        Once
+                        <input id="animation_sprite_parameter_loop_id" type="checkbox"/>
+                        <span class="lever"></span>
+                        Loop
+                      </label>
+                    </div>
+                    Animation ID:
+                    <input type="number" id="animation_sprite_parameter_anim_num_id">
+                    Animation Timeout:
+                    <input type="number" id="animation_sprite_parameter_anim_timeout_id">
+
+                    <button onclick="remove_selected();return false;">Remove</button>
+                    <button onclick="set_animation_sprites_parameters(document.getElementById('animation_sprite_parameter_visibility_id').checked?true:false,
+                                                                      document.getElementById('animation_sprite_parameter_loop_id').checked?true:false,
+                                                                      document.getElementById('animation_sprite_parameter_anim_num_id').value,
+                                                                      document.getElementById('animation_sprite_parameter_anim_timeout_id').value);return false;">Apply</button>
+                    </div>
+
+              </div>
+            </li>
+            <li>
+              <div class="collapsible-header teal">StaticSprites</div>
+              <div class="collapsible-body" id="static_sprites_id"></div>
+            </li>
+            <li>
+              <div class="collapsible-header red lighten-1">AnimationSprites</div>
+              <div class="collapsible-body" id="anim_sprites_id"></div>
+            </li>
+            <li>
+              <div class="collapsible-header orange lighten-2">Items</div>
+              <div class="collapsible-body">
+                  <button onclick="set_block_brush();return false;">AddBlock</button>
+                  <button onclick="set_cover_brush(1);return false;">AddLowCoverBlock</button>
+                  <button onclick="set_cover_brush(2);return false;">AddMediumCoverBlock</button>
+                  <button onclick="set_cover_brush(3);return false;">AddHighCoverBlock</button>
+                  
+              </div>
+            </li>
+          </ul>
+        </div>
+        
+        <!-- Modal Structure -->
+        <div id="modalLevelsList" class="modal">
+          <div class="modal-content">
+            <h4>Levels List</h4>
+            <p id="levels_list_panel"></p>
+          </div>
+        </div>
+        
+        
+        <script type="text/javascript">
+            var socket = io();
+            window.addEventListener("load",function(){
+                $('.collapsible').collapsible();
+                $('.modal').modal();
+                
+                toggle_static_sprite_parameters(false,null);
+                toggle_animation_sprite_parameters(false,null);
+                toggle_block_parameters(false,null);
+                
+                socket.on('sprites',function(data){
+                    InitSpritesPanel(data);
+                });
+                socket.emit("get_sprites_list",{});
+                
+                socket.on('anim_sprites',function(data){
+                    InitAnimSpritesPanel(data);
+                });
+                socket.emit("get_anim_sprites_list",{});
+                
+                socket.on('levels_list',function(data){
+                    var myNode = document.getElementById("levels_list_panel");
+                    while (myNode.firstChild) {
+                        myNode.removeChild(myNode.firstChild);
+                    }
+                    
+                    var list = data['list'];
+                    
+                    for(var i=0;i < list.length;i++){
+                        var lvl_name = list[i];
+                        var lvl_link = document.createElement('a');
+                        lvl_link.href = '#';
+                        lvl_link.innerText = lvl_name;
+                        (function(lvl_link,lvl_name){
+                            lvl_link.onclick = function(){
+                                socket.emit('load_level',{name:lvl_name});
+                            }.bind(lvl_name);
+                        })(lvl_link,lvl_name);
+                        
+                        document.getElementById('levels_list_panel').appendChild(lvl_link);
+                        document.getElementById('levels_list_panel').appendChild(document.createElement('br'));
+                    }
+                    $('#modalLevelsList').modal('open');
+                });
+                
+                socket.on('load_level_data',function(data){
+                    load_level(data,function(){
+                        clear_layers();
+                        $('#modalLevelsList').modal('close');
+                    });
+                });
+                
+            });
+        </script>
+    </body>
+</html>

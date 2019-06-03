@@ -1,0 +1,174 @@
+<html>
+    <head>
+        <title>Shooter</title>
+        <script src="https://cdn.socket.io/socket.io-1.4.5.js"></script>
+        
+        <script type="text/javascript" src="Client/cookie.js"></script>
+        <script type="text/javascript" src="Client/engine/request.js"></script>
+        <script type="text/javascript" src="Client/engine/base64.js"></script>
+        <script type="text/javascript" src="Client/engine/mouse.js"></script>
+        <script type="text/javascript" src="Client/engine/touch.js"></script>
+        <script type="text/javascript" src="Client/engine/render.js"></script>
+        <script type="text/javascript" src="Client/engine/map.js"></script>
+        <script type="text/javascript" src="Client/engine/core.js"></script>
+        <script type="text/javascript" src="Client/engine/sprite_manager.js"></script>
+        <script type="text/javascript" src="Client/engine/path_finding.js"></script>
+        
+        <script type="text/javascript" src="Client/engine/common/CGameLevel.js"></script>
+        <script type="text/javascript" src="Client/engine/common/CCharacter.js"></script>
+        
+        <script type="text/javascript" src="Client/shooter_client.js"></script>
+    </head>
+    <body>
+        <label id='fps' style='color:#fff;position:absolute;top:100px;left:50px;z-index: 1000;'>fps</label>
+        <label id='ping' style='color:#fff;position:absolute;top:150px;left:50px;z-index: 1000;'>fps</label>
+        <label id='debug' style='color:#fff;position:absolute;top:200px;left:50px;z-index: 1000;'>debug</label>
+        <canvas id='canvas'  style='background-color:#000;margin:0px;position:absolute;top:0px;left:0px;' oncontextmenu="return false;"> </canvas>
+
+        <script>
+            function sendToServer(socket,action,data){
+                socket.emit(action,data);
+            };
+            function recvFromServerListener(socket,action,callback){
+                socket.on(action,callback);
+            };
+            
+            var packet_id = 0;
+            var socket = io();
+            var session_id = '';
+            var prev_packet = 0;
+        </script>
+        <script type="text/javascript">
+            window.addEventListener("load",function(){
+                is_loading = true;
+                
+                socket.on('connect',function(){
+                    var val = readCookie("sgcookie");
+                    if(val !== null){
+                        session_id = val;
+                    }
+                    
+                    socket.emit("client_session_id",{session_id:session_id});
+                });
+                recvFromServerListener(socket,"init_connection",function(data){
+                    session_id = data.session_id;
+                    document.getElementById('debug').innerHTML = "session_id:"+session_id;
+                    createCookie("sgcookie",session_id,300);
+                    character.sendPositionFunction = function(cell_x,cell_y){
+                        socket.emit('send_pos',{session_id:session_id,
+                                                packet_id:packet_id++,
+                                                cell_x:cell_x,
+                                                cell_y:cell_y});
+                    };
+                    character.sendAttackFunction = function(target_x,target_y){
+                        socket.emit('send_attk',{session_id:session_id,
+                                                packet_id:packet_id++,
+                                                target_x:target_x,
+                                                target_y:target_y});
+                    };
+                    character.initializedCallback = function(){
+                        character.SetCellPosition(data.cell_x,data.cell_y);
+                        character.sendPositionFunction(data.cell_x,data.cell_y);
+                    }
+                });
+                
+                recvFromServerListener(socket,"logout",function(data){
+                    //var _tmp = players[data.session_id];
+                    players[data.session_id].DeInit();
+                    delete players[data.session_id];
+                    //if(_tmp)_tmp.DeInit();
+                    //delete _tmp;
+                });
+                
+                recvFromServerListener(socket,"sdata",function(data){
+                    if(!character.m_bInitialized)return;
+                    if(data.hasOwnProperty('health')){
+                        if(session_id === data.session_id){
+                            character.setHealth('char ' + data.health);
+                        }else{
+                            if(players.hasOwnProperty(data.session_id)){
+                                players[data.session_id].setHealth('play '+data.health);
+                            }
+                        }
+                    }
+                });
+                
+                recvFromServerListener(socket,"vdata",function(data){
+                    if(is_loading)return;
+                    if(session_id === '')return;
+                    if(session_id == data.session_id){
+                        if(!players[data.data.tp_sess].getVisibility() && data.data.vs){
+                            players[data.data.tp_sess].SetCellPosition(data.data.cell_x,data.data.cell_y);
+                        }
+                        players[data.data.tp_sess].setVisibility(data.data.vs);
+                    }
+                });
+                
+                recvFromServerListener(socket,"pdata",function(data){
+                    if(is_loading)return;
+                    if(session_id === '')return;
+                   
+                    if(session_id !== data.session_id){
+                        if(!players.hasOwnProperty(data.session_id)){
+                            players[data.session_id] = new CCharacter();
+                            players[data.session_id].Init('Power',{'Stand':16,'Run':10,'AttackRifleSingle':21},64,32,data.data.cell_x,data.data.cell_y);
+                        }else{
+                            if(players[data.session_id].m_bInitialized){
+                                if(data.type === 'send_pos'){
+                                    players[data.session_id].AddCellToPath(data.data.cell_x,data.data.cell_y);
+
+                                    if(!players[data.session_id].m_bMovingFlag){    
+                                        players[data.session_id].Move();
+                                    }
+                                }else if(data.type === 'send_attk'){
+                                    players[data.session_id].DoAttack('attack',data.data.target_x,data.data.target_y);
+                                }
+                                players[data.session_id].setHealth(data.health);
+                            }
+                        }
+                    }
+                });
+                
+                recvFromServerListener(socket,'load_level_data',function(data){
+                    game_level.load(data,function(){
+                        character.Init('Power',{'Stand':16,'Run':10,'AttackRifleSingle':21},64,32,10,10);
+                        is_loading = false;
+                        sendToServer(socket,'get_players_positions',{session_id:session_id});
+                    });
+                });
+                
+                sendToServer(socket,'load_level',{name:'MapName'});
+                
+                
+                /*
+                recvFromServerListener(socket,"get_map_images",function(data){
+                    //Define actions on tileset loaded
+                    sprite_manager.tilesetOnLoaded['main_map'] = function(){
+                        game_level.loadMap(data.Name,data.tilesCount,data.widthInTilesCount,data.tileWidth,data.tileHeight);
+                        character.Init('Power',{'Stand':16,'Run':10,'AttackRifleSingle':21},64,32);
+                        is_loading = false;
+                    };
+                    //Create tileset for main map
+                    sprite_manager.startTileset('main_map');
+                    for(var i=0;i<data.images.length;i++){
+                        sprite_manager.addStaticSprite(data.Name+'_'+i,data.images[i],function(key){});                    
+                    }
+                    sprite_manager.endTileset('main_map');
+                    
+                });
+                sendToServer(socket,"get_map_images",{name:"fot_springfield"});*/
+                
+                recvFromServerListener(socket,"ping_calc",function(data){
+                    ping = (Number(new Date().getTime())-ping_time)*0.5;
+                });
+                setInterval(function(){
+                    ping_time = new Date().getTime();
+                    sendToServer(socket,"ping_calc",{
+                         session_id:session_id,
+                         ping:ping
+                     });
+                },1000);
+            });
+        </script>
+    </body>
+</html>
